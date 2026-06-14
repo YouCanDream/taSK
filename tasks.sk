@@ -1,0 +1,334 @@
+on load:
+    # Only edit this if you know what you're doing. It is necessary to keep the "All" category and tag for this to work.
+    set {task::categories::*} to "&fAll", "&9Development", "&dBuilding", "&7Other"
+    set {task::tags::*} to "&fAll", "#bug", "#feature", "#enhancement", "#other"
+
+command /tasks:
+    permission: tasks.use
+    permission message: &cYou do not have permission to use this command.
+    trigger:
+        stop if sender is not a player
+        openTaskGUI(player, 1, getTaskFilters(player))
+
+on leave:
+    delete data tag "tasks:creating" of player
+    delete data tag "tasks:creation" of player
+    delete data tag "tasks:creationCategoryIndex" of player
+    delete data tag "tasks:creationTagIndex" of player
+    delete data tag "tasks:categoryFilter" of player
+    delete data tag "tasks:tagFilter" of player
+
+local function getTaskFilters(p: player) :: strings:
+    set data tag "tasks:categoryFilter" of {_p} to 1 if data tag "tasks:categoryFilter" of {_p} is not set
+    set data tag "tasks:tagFilter" of {_p} to 1 if data tag "tasks:tagFilter" of {_p} is not set
+    set {_cat} to data tag "tasks:categoryFilter" of {_p} # this is ugly but otherwise it sends annoying warning
+    set {_tag} to data tag "tasks:tagFilter" of {_p}
+    set {_categoryFilter} to {task::categories::%{_cat}%}
+    set {_tag} to {task::tags::%{_tag}%}
+    return {_categoryFilter}, {_tag}
+
+local function unpackTask(task: string) :: objects:
+    set {_unpack::*} to {_task} split by "|"
+    return {_unpack::*}
+    # TASK_ID
+    # TASK_NAME
+    # AUTHOR
+    # CREATION_DATE
+    # CATEGORY
+    # TAG
+    # DESCRIPTION
+    # LOCATION
+    # STATUS
+    # CLAIMED_BY
+
+local function packTask(task: objects):
+    set {_id} to {_task::1}
+    set {tasks::%{_id}%} to join {_task::*} with "|"
+
+local function openTaskGUI(p: player, page: integer, filters: strings):
+    set {_categoryFilter} to {_filters::1}
+    set {_tagFilter} to {_filters::2}
+    copy {tasks::*} into {_tasks::*}
+    
+    loop {_tasks::*}: # filters
+        set {_taskData::%loop-index%::*} to unpackTask(loop-value)
+        if {_categoryFilter} is not "&fAll":
+            remove loop-value from {_tasks::*} if {_taskData::%loop-index%::5} is not {_categoryFilter}
+        if {_tagFilter} is not "&fAll":
+            remove loop-value from {_tasks::*} if {_taskData::%loop-index%::6} is not {_tagFilter}
+    sort {_tasks::*} by {_taskData::%input index%::5}
+    create gui with virtual chest inventory with 5 rows named "Tasks - %{_page}%":
+        make gui slot (integers between 0 and 8), (integers between 36 and 44) with black stained glass pane without entire tooltip
+        set {_tasks::*} to page {_page} of {_tasks::*} with 27 lines
+        for {_task} in {_tasks::*}:
+            set {_c} to 8 + loop-counter
+            set {_taskId} to first element of ({_task} split by "|")
+            set {_taskName} to {_taskData::%{_taskId}%::2}
+            set {_author} to {_taskData::%{_taskId}%::3}
+            set {_creationDate} to {_taskData::%{_taskId}%::4}
+            set {_category} to {_taskData::%{_taskId}%::5}
+            set {_tag} to {_taskData::%{_taskId}%::6}
+            set {_description} to {_taskData::%{_taskId}%::7}
+            set {_location} to {_taskData::%{_taskId}%::8}
+            set {_status} to {_taskData::%{_taskId}%::9}
+            set {_claimedBy} to {_taskData::%{_taskId}%::10}
+            set {_item} to getTaskItem({_p}, {_taskData::%{_taskId}%::*})
+            make gui slot {_c} with {_item}:
+                if click type is lmb:
+                    teleport {_p} to parseTaskLocation({_location})
+                    send "<#c3c3c3>Teleported to task location." to {_p}
+                else if click type is rmb:
+                    if {_status} is "unclaimed":
+                        set {_taskData::%{_taskId}%::9} to "claimed"
+                        set {_taskData::%{_taskId}%::10} to name of {_p}
+                        sendTaskMessage("<#c3c3c3>%{_p}% &7claimed task &f%{_taskName}%&7.")
+                        play sound "block.chiseled_bookshelf.insert.enchanted" to all players where [input has permission "tasks.use"]
+                    else if {_status} is "claimed":
+                        set {_taskData::%{_taskId}%::9} to "unclaimed"
+                        set {_taskData::%{_taskId}%::10} to ""
+                        sendTaskMessage("<#c3c3c3>%{_p}% &7unclaimed task &f%{_taskName}%&7.")
+                        play sound "block.chiseled_bookshelf.insert.enchanted" to all players where [input has permission "tasks.use"]
+                    else if {_status} is "completed":
+                        set {_taskData::%{_taskId}%::9} to "claimed" 
+                        sendTaskMessage("<#c3c3c3>%{_p}% &7reclaimed task &f%{_taskName}%&7.")
+                        play sound "block.chiseled_bookshelf.insert.enchanted" to all players where [input has permission "tasks.use"]
+                    packTask({_taskData::%{_taskId}%::*})
+                    openTaskGUI({_p}, {_page}, {_filters::*})
+                else if click type is right mouse button with shift:
+                    if {_status} is "claimed":
+                        if {_claimedBy} is name of {_p}:
+                            set {_taskData::%{_taskId}%::9} to "completed"
+                            packTask({_taskData::%{_taskId}%::*})
+                            openTaskGUI({_p}, {_page}, {_filters::*})
+                            sendTaskMessage("<#c3c3c3>%{_p}% &7completed task &f%{_taskName}%&7.")
+                            play sound "block.chiseled_bookshelf.insert.enchanted" to all players where [input has permission "tasks.use"]
+                    if {_status} is "completed":
+                        if {_p} has permission "tasks.admin":
+                            delete {tasks::%{_taskId}%}
+                            openTaskGUI({_p}, {_page}, {_filters::*})
+                            sendTaskMessage("<#c3c3c3>%{_p}% &7approved and deleted task &f%{_taskName}%&7.")
+                            play sound "block.enchantment_table.use" to all players where [input has permission "tasks.use"]
+        
+        make gui slot 39 with arrow named "&cPrevious Page":
+            if {_page} <= 1:
+                send "&cThere is no previous page."
+                play sound "entity.villager.no" to {_p}
+                stop
+            else:
+                openTaskGUI({_p}, {_page} - 1, {_filters::*})
+                play sound "item.book.page_turn" to {_p}
+        make gui slot 41 with arrow named "&cNext Page":
+            if ({_page}+1)*27 > size of {_tasks::*}:
+                send "&cThere is no next page with your current filters."
+                play sound "entity.villager.no" to {_p}
+                stop
+            else:
+                openTaskGUI({_p}, {_page} + 1, {_filters::*})
+                play sound "item.book.page_turn" to {_p}
+
+        make gui slot 3 with getCategorySelectorItem({_p}):
+            add 1 to (data tag "tasks:categoryFilter" of {_p})
+            if data tag "tasks:categoryFilter" of {_p} > size of {task::categories::*}:
+                set data tag "tasks:categoryFilter" of {_p} to 1
+            openTaskGUI({_p}, {_page}, getTaskFilters({_p}))
+            play sound "block.dispenser.fail" to {_p}
+        
+        make gui slot 5 with getTagSelectorItem({_p}):
+            add 1 to data tag "tasks:tagFilter" of {_p}
+            if data tag "tasks:tagFilter" of {_p} > size of {task::tags::*}:
+                set data tag "tasks:tagFilter" of {_p} to 1
+            openTaskGUI({_p}, {_page}, getTaskFilters({_p}))
+            play sound "block.dispenser.fail" to {_p}
+        
+        make gui slot 44 with emerald named "&aCreate Task":
+            openTaskCreationGUI({_p})
+    open last gui for {_p}
+
+local function openTaskCreationGUI(p: player):
+    set data tag "tasks:creating" of {_p} to "|||" if data tag "tasks:creating" of {_p} is not set
+    set {_split::*} to data tag "tasks:creation" of {_p} split by "|"
+    set data tag "tasks:creationCategoryIndex" of {_p} to 1 if data tag "tasks:creationCategoryIndex" of {_p} is not set
+    set data tag "tasks:creationTagIndex" of {_p} to 1 if data tag "tasks:creationTagIndex" of {_p} is not set
+    create gui with virtual chest inventory with 3 rows named "Create Task":
+        make gui slot 4 with black candle named "&f&nTask Name" with lore "&7Current Name: &f%{_split::1} ? "N/A"%", " ", "<#8aaaab>LMB&8: &fEdit Name":
+            set data tag "tasks:creating" of {_p} to 1
+            close inventory of {_p}
+            send "&fEnter a name for this task. &7(type 'cancel' to cancel)" to {_p}
+        make gui slot 11 with anvil named "&f&nTask Description" with lore "&7Current Description: &f%{_split::2} ? "N/A"%", " ", "<#8aaaab>LMB&8: &fEdit Description":
+            set data tag "tasks:creating" of {_p} to 2
+            close inventory of {_p}
+            send "&fEnter a description for this task. &7(type 'cancel' to cancel)" to {_p}
+        make gui slot 13 with getCategoryCreationItem({_p}):
+            add 1 to data tag "tasks:creationCategoryIndex" of {_p}
+            if data tag "tasks:creationCategoryIndex" of {_p} > size of {task::categories::*}-1:
+                set data tag "tasks:creationCategoryIndex" of {_p} to 1
+            set {_catIndex} to data tag "tasks:creationCategoryIndex" of {_p}
+            set {_split::3} to {task::categories::%{_catIndex}+1%}
+            set data tag "tasks:creation" of player to join {_split::*} by "|"
+            openTaskCreationGUI({_p})
+        make gui slot 15 with getTagCreationItem({_p}):
+            add 1 to data tag "tasks:creationTagIndex" of {_p}
+            if data tag "tasks:creationTagIndex" of {_p} > size of {task::tags::*}-1:
+                set data tag "tasks:creationTagIndex" of {_p} to 1
+            set {_tagIndex} to data tag "tasks:creationTagIndex" of {_p}
+            set {_split::4} to {task::tags::%{_tagIndex}+1%}
+            set data tag "tasks:creation" of player to join {_split::*} by "|"
+            openTaskCreationGUI({_p})
+        make gui slot 22 with emerald block named "&a&nCreate Task":
+            if all:
+                {_split::1} is set
+                {_split::2} is set
+            then:
+                set {_id} to random integer between 1 and 100000
+                set {_date} to now
+                set {_l} to location of {_p}
+                set {_x} to round(x-coord of {_l})
+                set {_y} to round(y-coord of {_l})
+                set {_z} to round(z-coord of {_l})
+                set {_w} to world of {_l}
+                set {_split::3} to 2nd element of {task::categories::*} if {_split::3} is not set
+                set {_split::4} to 2nd element of {task::tags::*} if {_split::4} is not set
+                set {tasks::%{_id}%} to "%{_id}%|%{_split::1}%|%name of {_p}%|%{_date}%|%{_split::3}%|%{_split::4}%|%{_split::2}%|[%{_x}%, %{_y}%, %{_z}%, (%{_w}%)]|unclaimed|"
+                delete data tag "tasks:creating" of player
+                delete data tag "tasks:creation" of player
+                delete data tag "tasks:creationCategoryIndex" of player
+                delete data tag "tasks:creationTagIndex" of player
+                openTaskGUI({_p}, 1, getTaskFilters({_p}))
+                sendTaskMessage("<#c3c3c3>%{_p}% &7created task &f%{_split::1}%&7.")
+            else:
+                send "&cThis task cannot be created. Please fill in all required fields." to {_p}
+    open last gui for {_p}
+
+on chat:
+    set {_index} to (data tag "tasks:creating" of player)
+    if {_index} is not set:
+        stop
+    cancel event
+    if message is "cancel":
+        delete data tag "tasks:creating" of player
+        openTaskCreationGUI(player)
+    else if message contains "|":
+        send "&cInvalid input. Cannot contain '|'."
+        delete data tag "tasks:creating" of player
+        openTaskCreationGUI(player)
+    else:
+        set {_split::*} to (data tag "tasks:creation" of player) split by "|"
+        set {_split::%{_index}%} to message
+        set data tag "tasks:creation" of player to join {_split::*} by "|"
+        openTaskCreationGUI(player)
+
+local function getTaskItem(p: player, task: objects) :: item:
+    set {_status} to {_task::9}
+    if {_status} is "unclaimed":
+        set {_item} to book without additional tooltip
+        set {_statusString} to "&cUnclaimed"
+    else if {_status} is "claimed":
+        set {_claimedBy} to {_task::10}
+        if {_claimedBy} is name of {_p}:
+            set {_item} to writable book without additional tooltip
+            set glint of {_item} to true
+        else:
+            set {_item} to writable book without additional tooltip
+        set {_statusString} to "&aClaimed by <#77d18f>%{_claimedBy}%"
+    else if {_status} is "completed":
+        set {_item} to knowledge book without additional tooltip
+        set {_statusString} to "&aCompleted &7&o(Awaiting admin approval.)"
+    set name of {_item} to "&f&n%{_task::2}%&r &8(%{_task::1}%)"
+    set {_lore::1} to "<#c3c3c3>Author&8: &f%{_task::3}% &7(%{_task::4}%)"
+    set {_lore::2} to "<#c3c3c3>Category&8: &f%{_task::5}% &7(%{_task::6}%)"
+    set {_lore::3} to " "
+    set {_lore::4} to "<#c3c3c3>Description&8:"
+    set {_lore::5} to getSplitDescription({_task::7})
+    set {_lore::6} to " "
+    set {_lore::7} to {_statusString}
+    set {_lore::8} to " "
+    set {_lore::9} to "<#8aaaab>&lLMB&8: &fTeleport to task location."
+    if {_status} is "unclaimed":
+        set {_lore::10} to "<#8aaaab>&lRMB&8: &fClaim task."
+    else if {_status} is "claimed":
+        if {_claimedBy} is name of {_p}:
+            set {_lore::10} to "<#8aaaab>&lRMB&8: &fUnclaim task."
+            set {_lore::11} to "<#8aaaab>&lSHIFT + RMB&8: &fMark as &acompleted&f."
+    else if {_status} is "completed":
+        if any:
+            {_claimedBy} is name of {_p}
+            {_p} has permission "tasks.admin"
+        then:
+            set {_lore::10} to "<#8aaaab>&lRMB&8: &cRevert &fto &eclaimed &7(and in progress)"
+        if {_p} has permission "tasks.admin":
+            set {_lore::11} to "<#8aaaab>&lSHIFT + RMB&8: &fApprove and delete task."
+    set lore of {_item} to {_lore::*}
+    return {_item}
+
+local function getSplitDescription(description: string) :: string:
+    set {_final} to "&f"
+    loop {_description} split by " ":
+        add length of loop-value to {_length}
+        if {_length} > 25:
+            add "%nl%&f" to {_final}
+            set {_length} to 0
+        add "%loop-value% " to {_final}
+    return {_final}
+
+local function getCategorySelectorItem(p: player) :: item:
+    set {_index} to (data tag "tasks:categoryFilter" of {_p}) ? 1
+    set {_playerCategory} to {task::categories::%{_index}%}
+    set {_item} to hopper named "&f&nSelect Category"
+    set {_lore::1} to " "
+    loop {task::categories::*}:
+        if {_playerCategory} is loop-value:
+            add "&f → %loop-value%" to {_lore::*}
+        else:
+            add "    &f%loop-value%" to {_lore::*}
+    set lore of {_item} to {_lore::*}
+    return {_item}
+
+local function getTagSelectorItem(p: player) :: item:
+    set {_index} to (data tag "tasks:tagFilter" of {_p}) ? 1
+    set {_playerTag} to {task::tags::%{_index}%}
+    set {_item} to name tag named "&f&nSelect Tag"
+    set {_lore::1} to " "
+    loop {task::tags::*}:
+        if {_playerTag} is loop-value:
+            add "&f → &7%loop-value%" to {_lore::*}
+        else:
+            add "    &7%loop-value%" to {_lore::*}
+    set lore of {_item} to {_lore::*}
+    return {_item}
+
+local function getCategoryCreationItem(p: player) :: item:
+    set {_index} to (data tag "tasks:creationCategoryIndex" of {_p}) ? 1
+    set {_playerCategory} to {task::categories::%{_index}+1%}
+    set {_item} to hopper named "&f&nSelect Category"
+    set {_lore::1} to " "
+    loop {task::categories::*} where [input is not "&fAll"]:
+        if {_playerCategory} is loop-value:
+            add "&f → %loop-value%" to {_lore::*}
+        else:
+            add "    &f%loop-value%" to {_lore::*}
+    set lore of {_item} to {_lore::*}
+    return {_item}
+
+local function getTagCreationItem(p: player) :: item:
+    set {_index} to (data tag "tasks:creationTagIndex" of {_p}) ? 1
+    set {_playerTag} to {task::tags::%{_index}+1%}
+    set {_item} to name tag named "&f&nSelect Tag"
+    set {_lore::1} to " "
+    loop {task::tags::*} where [input is not "&fAll"]:
+        if {_playerTag} is loop-value:
+            add "&f → &7%loop-value%" to {_lore::*}
+        else:
+            add "    &7%loop-value%" to {_lore::*}
+    set lore of {_item} to {_lore::*}
+    return {_item}
+
+local function parseTaskLocation(location: string) :: location: #[x, y, z, (world)]
+    set {_coords::*} to {_location} split by ","
+    set {_x} to (substring of {_coords::1} from 2 to length of {_coords::1}) parsed as number
+    set {_y} to (substring of {_coords::2} from 2 to length of {_coords::2}) parsed as number
+    set {_z} to (substring of {_coords::3} from 2 to length of {_coords::3}) parsed as number
+    set {_world} to (substring of {_coords::4} from 3 to length of {_coords::4} - 2) parsed as world
+    return location({_x}, {_y}, {_z}, {_world})
+
+local function sendTaskMessage(msg: string):
+    send "%nl%&9&lTASKS&8: &f%{_msg}%%nl%" to all players where [input has permission "tasks.use"]
