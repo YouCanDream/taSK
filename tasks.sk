@@ -145,16 +145,16 @@ local function openTaskGUI(p: player, page: integer, filters: strings):
     open last gui for {_p}
 
 local function openTaskCreationGUI(p: player):
-    set data tag "tasks:creating" of {_p} to "|||" if data tag "tasks:creating" of {_p} is not set
+    set data tag "tasks:creation" of {_p} to "N/A|N/A||" if data tag "tasks:creation" of {_p} is not set
     set {_split::*} to data tag "tasks:creation" of {_p} split by "|"
     set data tag "tasks:creationCategoryIndex" of {_p} to 1 if data tag "tasks:creationCategoryIndex" of {_p} is not set
     set data tag "tasks:creationTagIndex" of {_p} to 1 if data tag "tasks:creationTagIndex" of {_p} is not set
     create gui with virtual chest inventory with 3 rows named "Create Task":
-        make gui slot 4 with black candle named "&f&nTask Name" with lore "&7Current Name: &f%{_split::1} ? "N/A"%", " ", "<#8aaaab>LMB&8: &fEdit Name":
+        make gui slot 4 with black candle named "&f&nTask Name" with lore "&7Current Name: &f%{_split::1}%", " ", "<#8aaaab>LMB&8: &fEdit Name":
             set data tag "tasks:creating" of {_p} to 1
             close inventory of {_p}
             send "&fEnter a name for this task. &7(type 'cancel' to cancel)" to {_p}
-        make gui slot 11 with anvil named "&f&nTask Description" with lore "&7Current Description: &f%{_split::2} ? "N/A"%", " ", "<#8aaaab>LMB&8: &fEdit Description":
+        make gui slot 11 with anvil named "&f&nTask Description" with lore "&7Current Description: &f%{_split::2}%", " ", "<#8aaaab>LMB&8: &fEdit Description":
             set data tag "tasks:creating" of {_p} to 2
             close inventory of {_p}
             send "&fEnter a description for this task. &7(type 'cancel' to cancel)" to {_p}
@@ -176,8 +176,8 @@ local function openTaskCreationGUI(p: player):
             openTaskCreationGUI({_p})
         make gui slot 22 with emerald block named "&a&nCreate Task":
             if all:
-                {_split::1} is set
-                {_split::2} is set
+                {_split::1} is not "N/A"
+                {_split::2} is not "N/A"
             then:
                 set {_id} to random integer between 1 and 100000
                 set {_date} to now
@@ -186,8 +186,8 @@ local function openTaskCreationGUI(p: player):
                 set {_y} to round(y-coord of {_l})
                 set {_z} to round(z-coord of {_l})
                 set {_w} to world of {_l}
-                set {_split::3} to 2nd element of {task::categories::*} if {_split::3} is not set
-                set {_split::4} to 2nd element of {task::tags::*} if {_split::4} is not set
+                set {_split::3} to 2nd element of {task::categories::*} if {_split::3} is ""
+                set {_split::4} to 2nd element of {task::tags::*} if {_split::4} is ""
                 set {tasks::%{_id}%} to "%{_id}%|%{_split::1}%|%name of {_p}%|%{_date}%|%{_split::3}%|%{_split::4}%|%{_split::2}%|[%{_x}%, %{_y}%, %{_z}%, (%{_w}%)]|unclaimed|"
                 delete data tag "tasks:creating" of player
                 delete data tag "tasks:creation" of player
@@ -197,6 +197,7 @@ local function openTaskCreationGUI(p: player):
                 sendTaskMessage("<#c3c3c3>%{_p}% &7created task &f%{_split::1}%&7.")
             else:
                 send "&cThis task cannot be created. Please fill in all required fields." to {_p}
+                play sound "entity.villager.no" to {_p}
     open last gui for {_p}
 
 on chat:
@@ -215,6 +216,7 @@ on chat:
         set {_split::*} to (data tag "tasks:creation" of player) split by "|"
         set {_split::%{_index}%} to message
         set data tag "tasks:creation" of player to join {_split::*} by "|"
+        delete data tag "tasks:creating" of player
         openTaskCreationGUI(player)
 
 local function getTaskItem(p: player, task: objects) :: item:
