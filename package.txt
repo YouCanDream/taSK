@@ -1,0 +1,5 @@
+name: taSK
+version: 1.0.0
+description: Adds a comprehensive task system for distributing work across your server during development.
+
+requires: skript >= 2.15, skript-gui, skript-reflect >= 2.6
