@@ -1,6 +1,6 @@
 on load:
-    # Only edit this if you know what you're doing. It is necessary to keep the "All" category and tag for this to work.
-    set {task::categories::*} to "&fAll", "&9Development", "&dBuilding", "&7Other"
+    # Only edit this if you know what you're doing. It is necessary to keep the "All" and "My Claims" category and tag for this to work.
+    set {task::categories::*} to "&fAll", "&8My Claims", "&9Development", "&dBuilding", "&7Other"
     set {task::tags::*} to "&fAll", "#bug", "#feature", "#enhancement", "#other"
 
 command /tasks:
@@ -49,11 +49,25 @@ local function openTaskGUI(p: player, page: integer, filters: strings):
     set {_categoryFilter} to {_filters::1}
     set {_tagFilter} to {_filters::2}
     copy {tasks::*} into {_tasks::*}
+
+    loop {task::categories::*}:
+        set {_data::category::%loop-value%} to 0
+    loop {task::tags::*}:
+        set {_data::tag::%loop-value%} to 0
     
     loop {_tasks::*}: # filters
         set {_taskData::%loop-index%::*} to unpackTask(loop-value)
+        if {_taskData::%loop-index%::10} = name of {_p}:
+            add 1 to {_data::category::%"&8My Claims"%}
+        add 1 to {_data::category::%"&fAll"%}
+        add 1 to {_data::tag::%"&fAll"%}
+        add 1 to {_data::category::%{_taskData::%loop-index%::5}%}
+        add 1 to {_data::tag::%{_taskData::%loop-index%::6}%}
         if {_categoryFilter} is not "&fAll":
-            remove loop-value from {_tasks::*} if {_taskData::%loop-index%::5} is not {_categoryFilter}
+            if {_categoryFilter} is "&8My Claims":
+                remove loop-value from {_tasks::*} if {_taskData::%loop-index%::10} is not name of {_p}
+            else:
+                remove loop-value from {_tasks::*} if {_taskData::%loop-index%::5} is not {_categoryFilter}
         if {_tagFilter} is not "&fAll":
             remove loop-value from {_tasks::*} if {_taskData::%loop-index%::6} is not {_tagFilter}
     sort {_tasks::*} by {_taskData::%input index%::5}
@@ -126,14 +140,14 @@ local function openTaskGUI(p: player, page: integer, filters: strings):
                 openTaskGUI({_p}, {_page} + 1, {_filters::*})
                 play sound "item.book.page_turn" to {_p}
 
-        make gui slot 3 with getCategorySelectorItem({_p}):
+        make gui slot 3 with getCategorySelectorItem({_p}, keyed {_data::category::*}):
             add 1 to (data tag "tasks:categoryFilter" of {_p})
             if data tag "tasks:categoryFilter" of {_p} > size of {task::categories::*}:
                 set data tag "tasks:categoryFilter" of {_p} to 1
             openTaskGUI({_p}, {_page}, getTaskFilters({_p}))
             play sound "block.dispenser.fail" to {_p}
         
-        make gui slot 5 with getTagSelectorItem({_p}):
+        make gui slot 5 with getTagSelectorItem({_p}, keyed {_data::tag::*}):
             add 1 to data tag "tasks:tagFilter" of {_p}
             if data tag "tasks:tagFilter" of {_p} > size of {task::tags::*}:
                 set data tag "tasks:tagFilter" of {_p} to 1
@@ -154,17 +168,20 @@ local function openTaskCreationGUI(p: player):
             set data tag "tasks:creating" of {_p} to 1
             close inventory of {_p}
             send "&fEnter a name for this task. &7(type 'cancel' to cancel)" to {_p}
+            play sound "item.lodestone_compass.lock" to {_p}
         make gui slot 11 with anvil named "&f&nTask Description" with lore "&7Current Description: &f%{_split::2}%", " ", "<#8aaaab>LMB&8: &fEdit Description":
             set data tag "tasks:creating" of {_p} to 2
             close inventory of {_p}
             send "&fEnter a description for this task. &7(type 'cancel' to cancel)" to {_p}
+            play sound "item.lodestone_compass.lock" to {_p}
         make gui slot 13 with getCategoryCreationItem({_p}):
             add 1 to data tag "tasks:creationCategoryIndex" of {_p}
-            if data tag "tasks:creationCategoryIndex" of {_p} > size of {task::categories::*}-1:
+            if data tag "tasks:creationCategoryIndex" of {_p} > size of {task::categories::*}-2:
                 set data tag "tasks:creationCategoryIndex" of {_p} to 1
             set {_catIndex} to data tag "tasks:creationCategoryIndex" of {_p}
-            set {_split::3} to {task::categories::%{_catIndex}+1%}
+            set {_split::3} to {task::categories::%{_catIndex}+2%}
             set data tag "tasks:creation" of player to join {_split::*} by "|"
+            play sound "block.dispenser.fail" to {_p}
             openTaskCreationGUI({_p})
         make gui slot 15 with getTagCreationItem({_p}):
             add 1 to data tag "tasks:creationTagIndex" of {_p}
@@ -173,6 +190,7 @@ local function openTaskCreationGUI(p: player):
             set {_tagIndex} to data tag "tasks:creationTagIndex" of {_p}
             set {_split::4} to {task::tags::%{_tagIndex}+1%}
             set data tag "tasks:creation" of player to join {_split::*} by "|"
+            play sound "block.dispenser.fail" to {_p}
             openTaskCreationGUI({_p})
         make gui slot 22 with emerald block named "&a&nCreate Task":
             if all:
@@ -195,6 +213,7 @@ local function openTaskCreationGUI(p: player):
                 delete data tag "tasks:creationTagIndex" of player
                 openTaskGUI({_p}, 1, getTaskFilters({_p}))
                 sendTaskMessage("<#c3c3c3>%{_p}% &7created task &f%{_split::1}%&7.")
+                play sound "block.respawn_anchor.deplete" at volume 0.5 and pitch 1.5 to all players where [input has permission "tasks.use"]
             else:
                 send "&cThis task cannot be created. Please fill in all required fields." to {_p}
                 play sound "entity.villager.no" to {_p}
@@ -272,38 +291,38 @@ local function getSplitDescription(description: string) :: string:
         add "%loop-value% " to {_final}
     return {_final}
 
-local function getCategorySelectorItem(p: player) :: item:
+local function getCategorySelectorItem(p: player, amounts: objects) :: item:
     set {_index} to (data tag "tasks:categoryFilter" of {_p}) ? 1
     set {_playerCategory} to {task::categories::%{_index}%}
     set {_item} to hopper named "&f&nSelect Category"
     set {_lore::1} to " "
     loop {task::categories::*}:
         if {_playerCategory} is loop-value:
-            add "&f → %loop-value%" to {_lore::*}
+            add "&f → %loop-value% <#6a6175>(%{_amounts::%loop-value%} ? 0%)" to {_lore::*}
         else:
-            add "    &f%loop-value%" to {_lore::*}
+            add "    &f%loop-value% <#6a6175>(%{_amounts::%loop-value%} ? 0%)" to {_lore::*}
     set lore of {_item} to {_lore::*}
     return {_item}
 
-local function getTagSelectorItem(p: player) :: item:
+local function getTagSelectorItem(p: player, amounts: objects) :: item:
     set {_index} to (data tag "tasks:tagFilter" of {_p}) ? 1
     set {_playerTag} to {task::tags::%{_index}%}
     set {_item} to name tag named "&f&nSelect Tag"
     set {_lore::1} to " "
     loop {task::tags::*}:
         if {_playerTag} is loop-value:
-            add "&f → &7%loop-value%" to {_lore::*}
+            add "&f → &7%loop-value% <#6a6175>(%{_amounts::%loop-value%} ? 0%)" to {_lore::*}
         else:
-            add "    &7%loop-value%" to {_lore::*}
+            add "    &7%loop-value% <#6a6175>(%{_amounts::%loop-value%} ? 0%)" to {_lore::*}
     set lore of {_item} to {_lore::*}
     return {_item}
 
 local function getCategoryCreationItem(p: player) :: item:
     set {_index} to (data tag "tasks:creationCategoryIndex" of {_p}) ? 1
-    set {_playerCategory} to {task::categories::%{_index}+1%}
+    set {_playerCategory} to {task::categories::%{_index}+2%}
     set {_item} to hopper named "&f&nSelect Category"
     set {_lore::1} to " "
-    loop {task::categories::*} where [input is not "&fAll"]:
+    loop {task::categories::*} where [input is not "&fAll" or "&8My Claims"]:
         if {_playerCategory} is loop-value:
             add "&f → %loop-value%" to {_lore::*}
         else:
